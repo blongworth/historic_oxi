@@ -15,6 +15,14 @@ Need data on target size, counts, etc.
 
 Work with un-blank corrected data preferentially.
 
+# Finding data
+
+Data more recent than 2002 seems pretty straightforward, other than some odd gf_date's that put CFAMS data in the 1990's. Older data is more problematic. Looking into it.
+
+## Old data
+
+
+
 ```{r}
 library(amstools)
 library(tidyverse)
@@ -29,28 +37,61 @@ standards <- tbl(db, "standards")
 target <- tbl(db, "target")
 graphite <- tbl(db, "graphite")
 wheel_pos <- tbl(db, "wheel_pos")
-dbListFields(db, "standards")
+ams_results <- tbl(db, "ams_results")
+dbListFields(db, "archive")
+dbListTables(db)
 
+head(ams_results)
+
+old_ox <- ams_results %>% 
+  inner_join(target) %>% 
+  inner_join(graphite) %>% 
+  inner_join(standards)
+
+ox_target <- target %>% 
+  filter(target_name %like% "X%") %>% 
+  select(tp_num, target_name, tp_date_pressed, osg_num) %>% 
+  inner_join(graphite) %>% 
+  inner_join(no_os) %>% 
+  arrange(tp_date_pressed)
+
+head(ox_target)
+head(no_os)
 
 ox <- no_os %>% 
   select(tp_num, f_modern, f_int_error, f_ext_error, primary_std, q_flag) %>% 
-  inner_join(select(target, tp_num, tp_date_pressed, osg_num, rec_num, graphite_lab)) %>% 
+  inner_join(select(target, tp_num, tp_date_pressed, osg_num, 
+                    rec_num, graphite_lab, min_time)) %>% 
   inner_join(select(wheel_pos, wheel_id, tp_num)) %>% 
-  inner_join(select(graphite, osg_num, gf_date, gf_co2_qty, gf_devel, gf_test)) %>% 
+  inner_join(select(graphite, osg_num, gf_date, gf_date_to_ams, 
+                    gf_start_time, gf_co2_qty, gf_devel, gf_test)) %>% 
   inner_join(select(standards, rec_num, sample_id, Fm_cons)) %>% 
   collect() %>% 
   filter(str_detect(sample_id, "^[ ]?OX-?[I1][ \\/]") | rec_num == 34148) %>% 
-  mutate(rec_num = as.factor(rec_num))
+  mutate(rec_num = as.factor(rec_num),
+         system = as.factor(ifelse(str_detect(wheel_id, "^CFAMS"), "CFAMS", "USAMS")))
 
 str(ox)
 skim(ox)
 ```
 
 ```{r}
-ggplot(ox, aes(gf_date, f_modern, color = rec_num)) +
+ox %>% 
+  filter(f_modern > 0.9,
+         f_modern < 1.2) %>% 
+ggplot(aes(tp_date_pressed, f_modern, color = system)) +
   geom_point() +
   ylim(0.9, 1.2)
 ```
+
+Looks like there were CFAMS wheels back in the 1990's? Problems with gf_date.
+```{r}
+ox %>% 
+  filter(gf_date < "2000-01-01",
+         system == "CFAMS") %>% 
+  group_by(wheel_id)
+```
+
 ```{r}
 ox %>% 
   filter(f_modern > 0.9,

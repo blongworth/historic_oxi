@@ -1,0 +1,61 @@
+---
+title: "Historic OX-I Quality"
+output: html_notebook
+---
+
+Estimate changes in performance of machines over time by looking at OX-I data.
+
+Check especially for bulb tests.
+
+Get OX-I rec nums from standards.
+
+Find all samples with those rec nums in os or no_os.
+
+Need data on target size, counts, etc.
+
+Work with un-blank corrected data preferentially.
+
+```{r}
+library(amstools)
+library(tidyverse)
+library(DBI)
+library(skimr)
+```
+```{r}
+db <- conNOSAMS()
+no_os <- tbl(db, "no_os")
+os <- tbl(db, "os")
+standards <- tbl(db, "standards")
+target <- tbl(db, "target")
+graphite <- tbl(db, "graphite")
+wheel_pos <- tbl(db, "wheel_pos")
+dbListFields(db, "standards")
+
+
+ox <- no_os %>% 
+  select(tp_num, f_modern, f_int_error, f_ext_error, primary_std, q_flag) %>% 
+  inner_join(select(target, tp_num, tp_date_pressed, osg_num, rec_num, graphite_lab)) %>% 
+  inner_join(select(wheel_pos, wheel_id, tp_num)) %>% 
+  inner_join(select(graphite, osg_num, gf_date, gf_co2_qty, gf_devel, gf_test)) %>% 
+  inner_join(select(standards, rec_num, sample_id, Fm_cons)) %>% 
+  collect() %>% 
+  filter(str_detect(sample_id, "^[ ]?OX-?[I1][ \\/]") | rec_num == 34148) %>% 
+  mutate(rec_num = as.factor(rec_num))
+
+str(ox)
+skim(ox)
+```
+
+```{r}
+ggplot(ox, aes(gf_date, f_modern, color = rec_num)) +
+  geom_point() +
+  ylim(0.9, 1.2)
+```
+```{r}
+ox %>% 
+  filter(f_modern > 0.9,
+         f_modern < 1.2) %>% 
+  ggplot(aes(factor(rec_num), f_modern)) +
+           geom_boxplot()
+```
+

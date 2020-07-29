@@ -69,7 +69,15 @@ ox <- no_os %>%
   collect() %>% 
   filter(str_detect(sample_id, "^[ ]?OX-?[I1][ \\/]") | rec_num == 34148) %>% 
   mutate(rec_num = as.factor(rec_num),
-         system = as.factor(ifelse(str_detect(wheel_id, "^CFAMS"), "CFAMS", "USAMS")))
+         system = as.factor(ifelse(str_detect(wheel_id, "^CFAMS"),
+                                   "CFAMS", "USAMS")),
+         normFm = normFm(f_modern, Fm_cons),
+         rep_err = pmax(f_int_error, f_ext_error),
+         config = case_when(tp_date_pressed < "2012-07-01" ~ "recomb",
+                            tp_date_pressed < "2014-06-01" ~ "bouncer",
+                            tp_date_pressed < "2016-07-10" ~ "UCIsource",
+                            tp_date_pressed < "2019-02-01" ~ "snics",
+                            tp_date_pressed > "2016-07-10" ~ "retune"))
 
 str(ox)
 skim(ox)
@@ -77,11 +85,34 @@ skim(ox)
 
 ```{r}
 ox %>% 
-  filter(f_modern > 0.9,
-         f_modern < 1.2) %>% 
-ggplot(aes(tp_date_pressed, f_modern, color = system)) +
+  filter(f_modern > 0.95,
+         f_modern < 1.1,
+         rec_num != 34148,
+         gf_co2_qty > 40,
+         rep_err < 0.01,
+         system == "USAMS") %>% 
+ggplot(aes(tp_date_pressed, f_modern, color = config)) +
+  geom_errorbar(aes(ymin = f_modern - rep_err,
+                    ymax = f_modern + rep_err)) +
   geom_point() +
-  ylim(0.9, 1.2)
+  geom_hline(yintercept = 1.0398)
+```
+
+By system config
+
+```{r}
+ox %>% 
+  filter(f_modern > 0.95,
+         f_modern < 1.1,
+         rec_num != 34148,
+         gf_co2_qty > 40,
+         rep_err < 0.01,
+         system == "USAMS") %>% 
+  group_by(config) %>% 
+  summarize(fm = mean(f_modern),
+            sd = sd(f_modern),
+            merr = mean(rep_err),
+            N = n())
 ```
 
 Looks like there were CFAMS wheels back in the 1990's? Problems with gf_date.

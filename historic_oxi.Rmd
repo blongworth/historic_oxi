@@ -1,6 +1,8 @@
 ---
 title: "Historic OX-I Quality"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 
 Estimate changes in performance of machines over time by looking at OX-I data.
@@ -28,7 +30,10 @@ library(amstools)
 library(tidyverse)
 library(DBI)
 library(skimr)
+library(gt)
 ```
+
+
 ```{r}
 db <- conNOSAMS()
 no_os <- tbl(db, "no_os")
@@ -38,10 +43,6 @@ target <- tbl(db, "target")
 graphite <- tbl(db, "graphite")
 wheel_pos <- tbl(db, "wheel_pos")
 ams_results <- tbl(db, "ams_results")
-dbListFields(db, "archive")
-dbListTables(db)
-
-head(ams_results)
 
 old_ox <- ams_results %>% 
   inner_join(target) %>% 
@@ -50,14 +51,23 @@ old_ox <- ams_results %>%
 
 ox_target <- target %>% 
   filter(target_name %like% "X%") %>% 
-  select(tp_num, target_name, tp_date_pressed, osg_num) %>% 
+  select(tp_num, target_name, tp_date_pressed, rec_num, osg_num) %>% 
   inner_join(graphite) %>% 
-  inner_join(no_os) %>% 
+  left_join(no_os) %>% 
   arrange(tp_date_pressed)
 
 head(ox_target)
 head(no_os)
 
+ox_target %>% 
+  filter(!is.na(rec_num),
+         rec_num != 34148) %>% 
+  arrange(gf_date) %>% 
+  head
+```
+
+
+```{r}
 ox <- no_os %>% 
   select(tp_num, f_modern, f_int_error, f_ext_error, primary_std, q_flag) %>% 
   inner_join(select(target, tp_num, tp_date_pressed, osg_num, 
@@ -77,10 +87,13 @@ ox <- no_os %>%
                             tp_date_pressed < "2014-06-01" ~ "bouncer",
                             tp_date_pressed < "2016-07-10" ~ "UCIsource",
                             tp_date_pressed < "2019-02-01" ~ "snics",
-                            tp_date_pressed > "2016-07-10" ~ "retune"))
-
-str(ox)
-skim(ox)
+                            tp_date_pressed > "2016-07-10" ~ "retune"),
+         config = factor(config, levels = c("recomb", "bouncer", 
+                                            "UCIsource", "snics",
+                                            "retune"))) %>% 
+  group_by(system, config) %>% 
+  mutate(outlier = is.na(removeOutliers(f_modern))) %>% 
+  ungroup()
 ```
 
 ```{r}
@@ -90,7 +103,8 @@ ox %>%
          rec_num != 34148,
          gf_co2_qty > 40,
          rep_err < 0.01,
-         system == "USAMS") %>% 
+         system == "USAMS",
+         outlier == FALSE) %>% 
 ggplot(aes(tp_date_pressed, f_modern, color = config)) +
   geom_errorbar(aes(ymin = f_modern - rep_err,
                     ymax = f_modern + rep_err)) +
@@ -107,8 +121,9 @@ ox %>%
          rec_num != 34148,
          gf_co2_qty > 40,
          rep_err < 0.01,
-         system == "USAMS") %>% 
-  group_by(config) %>% 
+         #system == "USAMS",
+         outlier == FALSE) %>% 
+  group_by(config, system) %>% 
   summarize(fm = mean(f_modern),
             sd = sd(f_modern),
             merr = mean(rep_err),
